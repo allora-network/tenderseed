@@ -8,10 +8,12 @@ import (
 )
 
 // Config is a tenderseed configuration
+//
 //nolint:lll
 type Config struct {
 	ListenAddress           string   `toml:"laddr" comment:"Address to listen for incoming connections"`
 	ChainID                 string   `toml:"chain_id" comment:"network identifier (todo move to cli flag argument? keeps the config network agnostic)"`
+	Moniker                 string   `toml:"moniker" comment:"node name"`
 	LogLevel                string   `toml:"log_level" comment:"logging level to filter output (\"info\", \"debug\", \"error\" or \"none\")"`
 	NodeKeyFile             string   `toml:"node_key_file" comment:"path to node_key (relative to tendermint-seed home directory or an absolute path)"`
 	AddrBookFile            string   `toml:"addr_book_file" comment:"path to address book (relative to tendermint-seed home directory or an absolute path)"`
@@ -20,6 +22,8 @@ type Config struct {
 	MaxNumOutboundPeers     int      `toml:"max_num_outbound_peers" comment:"maximum number of outbound connections"`
 	MaxPacketMsgPayloadSize int      `toml:"max_packet_msg_payload_size" comment:"maximum size of a message packet payload, in bytes"`
 	Seeds                   string   `toml:"seeds" comment:"seed nodes we can use to discover peers"`
+	MetricsListenAddr       string   `toml:"metrics_listen_addr" comment:"metrics listen addr"`
+	MetricsLabelsAndValues  []string `toml:"metrics_labels_and_values" comment:"labels and values for metrics"`
 }
 
 // LoadOrGenConfig loads a seed config from file if the file exists
@@ -70,6 +74,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		ListenAddress:           "tcp://0.0.0.0:26656",
 		ChainID:                 "",
+		Moniker:                 "tenderseed",
 		LogLevel:                "info",
 		NodeKeyFile:             "config/node_key.json",
 		AddrBookFile:            "data/addrbook.json",
@@ -78,5 +83,7 @@ func DefaultConfig() *Config {
 		MaxNumOutboundPeers:     60,
 		MaxPacketMsgPayloadSize: 1024,
 		Seeds:                   "",
+		MetricsListenAddr:       ":26660",
+		MetricsLabelsAndValues:  []string{},
 	}
 }

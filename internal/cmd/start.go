@@ -4,10 +4,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/google/subcommands"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/libs/log"
 	tmos "github.com/tendermint/tendermint/libs/os"
@@ -43,13 +46,35 @@ start the tenderseed
 func (args *StartArgs) SetFlags(flagSet *flag.FlagSet) {
 }
 
+func (args *StartArgs) startMetricsServer() {
+	if args.SeedConfig.MetricsListenAddr == "" {
+		return
+	}
+	srv := &http.Server{
+		Addr: args.SeedConfig.MetricsListenAddr,
+		Handler: promhttp.InstrumentMetricHandler(
+			prometheus.DefaultRegisterer, promhttp.HandlerFor(
+				prometheus.DefaultGatherer,
+				promhttp.HandlerOpts{MaxRequestsInFlight: 100},
+			),
+		),
+		// ReadHeaderTimeout: readHeaderTimeout,
+	}
+	go func() {
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			// Error starting or closing listener:
+			// n.Logger.Error("Prometheus HTTP server ListenAndServe", "err", err)
+		}
+	}()
+}
+
 // Execute runs the command
 func (args *StartArgs) Execute(_ context.Context, flagSet *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	logger := log.NewTMLogger(
 		log.NewSyncWriter(os.Stdout),
 	)
 
-	chainID := args.SeedConfig.ChainID    
+	chainID := args.SeedConfig.ChainID
 	nodeKeyFilePath := args.SeedConfig.NodeKeyFile
 	addrBookFilePath := args.SeedConfig.AddrBookFile
 
@@ -106,6 +131,11 @@ func (args *StartArgs) Execute(_ context.Context, flagSet *flag.FlagSet, _ ...in
 			0,
 		)
 
+	moniker := args.SeedConfig.Moniker
+	if moniker == "" {
+		moniker = fmt.Sprintf("%s-seed", chainID)
+	}
+
 	nodeInfo := p2p.DefaultNodeInfo{
 		ProtocolVersion: protocolVersion,
 		DefaultNodeID:   nodeKey.ID(),
@@ -113,7 +143,7 @@ func (args *StartArgs) Execute(_ context.Context, flagSet *flag.FlagSet, _ ...in
 		Network:         chainID,
 		Version:         "0.0.1",
 		Channels:        []byte{pex.PexChannel},
-		Moniker:         fmt.Sprintf("%s-seed", chainID),
+		Moniker:         moniker,
 	}
 
 	addr, err := p2p.NewNetAddressString(p2p.IDAddressString(nodeInfo.DefaultNodeID, nodeInfo.ListenAddr))
@@ -135,7 +165,7 @@ func (args *StartArgs) Execute(_ context.Context, flagSet *flag.FlagSet, _ ...in
 	})
 	pexReactor.SetLogger(filteredLogger.With("module", "pex"))
 
-	sw := p2p.NewSwitch(cfg, transport)
+	sw := p2p.NewSwitch(cfg, transport, p2p.WithMetrics(p2p.PrometheusMetrics("", args.SeedConfig.MetricsLabelsAndValues...)))
 	sw.SetLogger(filteredLogger.With("module", "switch"))
 	sw.SetNodeKey(nodeKey)
 	sw.SetAddrBook(book)
@@ -143,6 +173,8 @@ func (args *StartArgs) Execute(_ context.Context, flagSet *flag.FlagSet, _ ...in
 
 	// last
 	sw.SetNodeInfo(nodeInfo)
+
+	args.startMetricsServer()
 
 	tmos.TrapSignal(logger, func() {
 		logger.Info("shutting down...")
